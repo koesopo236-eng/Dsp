@@ -1,0 +1,66 @@
+name: Bangun APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'proyek.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  bangun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Ekstrak proyek
+        run: |
+          if [ ! -f proyek.zip ]; then
+            echo "proyek.zip tidak ada di repositori"
+            exit 1
+          fi
+          rm -rf proyek
+          mkdir proyek
+          unzip -q proyek.zip -d proyek
+          if [ -f proyek/settings.gradle.kts ]; then
+            echo "PROJ=proyek" >> "$GITHUB_ENV"
+          else
+            sub=$(find proyek -maxdepth 2 -name settings.gradle.kts | head -n 1)
+            if [ -z "$sub" ]; then
+              echo "settings.gradle.kts tidak ditemukan di dalam zip"
+              exit 1
+            fi
+            echo "PROJ=$(dirname "$sub")" >> "$GITHUB_ENV"
+          fi
+
+      - name: Bangun APK
+        run: |
+          cd "$PROJ"
+          gradle assembleDebug --no-daemon --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/PengolahAudio.apk"
+
+      - name: Simpan APK sebagai artefak
+        uses: actions/upload-artifact@v4
+        with:
+          name: PengolahAudio
+          path: PengolahAudio.apk
+
+      - name: Terbitkan APK di Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ github.run_number }}" PengolahAudio.apk \
+            --title "Pengolah Audio v${{ github.run_number }}" \
+            --notes "APK hasil build otomatis." \
+            --target "${{ github.sha }}"
